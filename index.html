@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Smart Farming - Arsi Farm</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- WAJIB: Library MQTT.js -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    
+    <style>
+        /* Warna Identitas UGM */
+        .bg-ugm-blue { background-color: #1a3d7c; }
+        .text-ugm-blue { color: #1a3d7c; }
+        .bg-ugm-yellow { background-color: #fdb813; }
+        .text-ugm-yellow { color: #fdb813; }
+        .border-ugm-blue { border-color: #1a3d7c; }
+        .border-ugm-yellow { border-color: #fdb813; }
+        
+        /* Sembunyikan scrollbar untuk navigasi menu */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased flex flex-col min-h-screen">
+
+    <header class="bg-ugm-blue text-white shadow-md border-b-4 border-ugm-yellow relative z-10">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="p-1.5 bg-white rounded-full w-11 h-11 flex items-center justify-center shadow-inner shrink-0">
+                    <img src="assets/logo_ugm.png" alt="Logo UGM" class="w-full h-full object-contain">
+                </div>
+                <div class="p-1.5 bg-white rounded-full w-11 h-11 flex items-center justify-center shadow-inner shrink-0">
+                    <img src="assets/logo_trik.png" alt="Logo TRIK" class="w-full h-full object-contain">
+                </div>
+                <div>
+                    <h1 class="text-lg md:text-xl font-extrabold tracking-wide text-ugm-yellow">DASHBOARD SMART FARMING</h1>
+                    <p class="text-[10px] md:text-xs text-gray-200 uppercase font-semibold">Program Pengabdian kepada Masyarakat - Sekolah Vokasi Universitas Gadjah Mada</p>
+                </div>
+            </div>
+            <div class="hidden md:flex items-center space-x-2 text-sm bg-blue-950 px-3 py-1.5 rounded-lg border border-blue-800">
+                <span class="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse" id="status-dot"></span>
+                <span class="font-medium text-gray-300">Status Server: <strong class="text-white" id="status-text">Menghubungkan...</strong></span>
+            </div>
+        </div>
+    </header>
+
+    <div id="alarm-pln" class="hidden bg-red-600 text-white px-4 py-3 shadow-lg border-b-4 border-red-800 transition-all duration-300 z-0">
+        <div class="container mx-auto flex items-center justify-between">
+            <div class="flex items-center">
+                <i class="fa-solid fa-triangle-exclamation text-3xl mr-4 animate-pulse text-yellow-300"></i>
+                <div>
+                    <h3 class="font-extrabold text-sm md:text-base tracking-wide">PERINGATAN DARURAT: LISTRIK PLN PADAM!</h3>
+                    <p class="text-[11px] md:text-xs font-medium text-red-100">Sistem suplai daya saat ini beroperasi penuh menggunakan Inverter dan Baterai.</p>
+                </div>
+            </div>
+            <button onclick="document.getElementById('alarm-pln').classList.add('hidden')" class="p-2 hover:bg-red-700 rounded-lg transition-colors">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+    </div>
+
+    <main class="container mx-auto px-4 py-6 flex-grow">
+        
+        <div class="flex space-x-2 mb-6 overflow-x-auto no-scrollbar pb-2 border-b border-gray-300">
+            <button onclick="switchNode('utama')" id="tab-utama" class="tab-btn active whitespace-nowrap px-5 py-2.5 rounded-t-lg font-bold text-sm transition-colors bg-ugm-blue text-white">
+                <i class="fa-solid fa-microchip mr-2"></i>Pusat Kendali (Power)
+            </button>
+            <button onclick="switchNode('node1')" id="tab-node1" class="tab-btn whitespace-nowrap px-5 py-2.5 rounded-t-lg font-bold text-sm transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300">
+                <i class="fa-solid fa-seedling mr-2"></i>Greenhouse 1
+            </button>
+            <button onclick="switchNode('node2')" id="tab-node2" class="tab-btn whitespace-nowrap px-5 py-2.5 rounded-t-lg font-bold text-sm transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300">
+                <i class="fa-solid fa-seedling mr-2"></i>Greenhouse 2
+            </button>
+            <button onclick="switchNode('node3')" id="tab-node3" class="tab-btn whitespace-nowrap px-5 py-2.5 rounded-t-lg font-bold text-sm transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300">
+                <i class="fa-solid fa-seedling mr-2"></i>Greenhouse 3
+            </button>
+        </div>
+
+        <!-- ======================= TAB UTAMA ======================= -->
+        <div id="view-utama" class="node-view block animate-fade-in">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-ugm-blue p-5">
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-xs font-bold text-gray-500 uppercase">Daya Konsumsi (Load)</h2>
+                        <span class="text-ugm-blue"><i class="fa-solid fa-plug text-lg"></i></span>
+                    </div>
+                    <div class="text-3xl font-black text-gray-800" id="val-daya-utama">-- <span class="text-base font-bold text-gray-500">W</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-ugm-yellow p-5">
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-xs font-bold text-gray-500 uppercase">Arus Keluaran (AC)</h2>
+                        <span class="text-ugm-yellow"><i class="fa-solid fa-bolt text-lg"></i></span>
+                    </div>
+                    <div class="text-3xl font-black text-gray-800" id="val-arus-out">-- <span class="text-base font-bold text-gray-500">A</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-green-500 p-5">
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-xs font-bold text-gray-500 uppercase">Arus Panel Surya (DC)</h2>
+                        <span class="text-green-500"><i class="fa-solid fa-solar-panel text-lg"></i></span>
+                    </div>
+                    <div class="text-3xl font-black text-gray-800" id="val-arus-pv">-- <span class="text-base font-bold text-gray-500">A</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-ugm-blue p-5">
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-xs font-bold text-gray-500 uppercase">Kapasitas Baterai</h2>
+                        <span class="text-ugm-blue"><i class="fa-solid fa-car-battery text-lg"></i></span>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <div class="text-3xl font-black text-gray-800" id="val-batt-perc">--<span class="text-base font-bold text-gray-500">%</span></div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="bg-gray-300 h-2 rounded-full" id="batt-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+                <h3 class="text-md font-bold text-gray-800 mb-4"><i class="fa-solid fa-chart-area text-ugm-blue mr-2"></i>Grafik Konsumsi Daya Real-time</h3>
+                <div class="relative w-full h-64"><canvas id="wattChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- ======================= TAB GH 1 ======================= -->
+        <div id="view-node1" class="node-view hidden animate-fade-in">
+            <h2 class="text-lg font-bold text-ugm-blue mb-4 border-b-2 border-ugm-yellow inline-block pb-1">Area Monitoring: Greenhouse 1</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-red-500 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Suhu Ruangan</h2><span class="text-red-500"><i class="fa-solid fa-temperature-half text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n1-suhu">-- <span class="text-base font-bold text-gray-500">&deg;C</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-blue-400 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Kelembapan (RH)</h2><span class="text-blue-400"><i class="fa-solid fa-droplet text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n1-lembab">-- <span class="text-base font-bold text-gray-500">%</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-ugm-yellow p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Nutrisi (TDS)</h2><span class="text-ugm-yellow"><i class="fa-solid fa-flask text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n1-tds">-- <span class="text-base font-bold text-gray-500">ppm</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-green-500 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Kadar pH Air</h2><span class="text-green-500"><i class="fa-solid fa-vial text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n1-ph">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================= TAB GH 2 ======================= -->
+        <div id="view-node2" class="node-view hidden animate-fade-in">
+            <h2 class="text-lg font-bold text-ugm-blue mb-4 border-b-2 border-ugm-yellow inline-block pb-1">Area Monitoring: Greenhouse 2</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-red-500 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Suhu Ruangan</h2><span class="text-red-500"><i class="fa-solid fa-temperature-half text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n2-suhu">-- <span class="text-base font-bold text-gray-500">&deg;C</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-blue-400 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Kelembapan (RH)</h2><span class="text-blue-400"><i class="fa-solid fa-droplet text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n2-lembab">-- <span class="text-base font-bold text-gray-500">%</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-ugm-yellow p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Nutrisi (TDS)</h2><span class="text-ugm-yellow"><i class="fa-solid fa-flask text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n2-tds">-- <span class="text-base font-bold text-gray-500">ppm</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-green-500 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Kadar pH Air</h2><span class="text-green-500"><i class="fa-solid fa-vial text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n2-ph">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================= TAB GH 3 ======================= -->
+        <div id="view-node3" class="node-view hidden animate-fade-in">
+            <h2 class="text-lg font-bold text-ugm-blue mb-4 border-b-2 border-ugm-yellow inline-block pb-1">Area Monitoring: Greenhouse 3</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-red-500 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Suhu Ruangan</h2><span class="text-red-500"><i class="fa-solid fa-temperature-half text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n3-suhu">-- <span class="text-base font-bold text-gray-500">&deg;C</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-blue-400 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Kelembapan (RH)</h2><span class="text-blue-400"><i class="fa-solid fa-droplet text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n3-lembab">-- <span class="text-base font-bold text-gray-500">%</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-ugm-yellow p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Nutrisi (TDS)</h2><span class="text-ugm-yellow"><i class="fa-solid fa-flask text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n3-tds">-- <span class="text-base font-bold text-gray-500">ppm</span></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border-l-4 border-green-500 p-5">
+                    <div class="flex justify-between items-center mb-2"><h2 class="text-xs font-bold text-gray-500 uppercase">Kadar pH Air</h2><span class="text-green-500"><i class="fa-solid fa-vial text-lg"></i></span></div>
+                    <div class="text-3xl font-black text-gray-800" id="n3-ph">--</div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="bg-gray-800 text-gray-400 text-center py-4 text-xs font-medium mt-auto border-t border-gray-700">
+        <p>&copy; 2026 Program Pengabdian kepada Masyarakat - Sekolah Vokasi Universitas Gadjah Mada</p>
+    </footer>
+
+    <!-- ======================= SCRIPT LOGIKA ======================= -->
+    <script>
+        // --- 1. LOGIKA NAVIGASI TAB MENU ---
+        function switchNode(nodeId) {
+            document.querySelectorAll('.node-view').forEach(el => {
+                el.classList.add('hidden');
+                el.classList.remove('block');
+            });
+            
+            document.getElementById('view-' + nodeId).classList.remove('hidden');
+            document.getElementById('view-' + nodeId).classList.add('block');
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('bg-ugm-blue', 'text-white');
+                btn.classList.add('bg-gray-200', 'text-gray-600');
+            });
+
+            const activeTab = document.getElementById('tab-' + nodeId);
+            activeTab.classList.remove('bg-gray-200', 'text-gray-600');
+            activeTab.classList.add('bg-ugm-blue', 'text-white');
+        }
+
+        // --- 2. INISIALISASI GRAFIK CHART.JS ---
+        const ctx = document.getElementById('wattChart').getContext('2d');
+        const chartLabels = [];
+        const chartData = [];
+
+        const wattChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    label: 'Daya AC (Watt)',
+                    data: chartData,
+                    borderColor: '#1a3d7c',
+                    backgroundColor: 'rgba(26, 61, 124, 0.1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#fdb813',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false } }, 
+                scales: { 
+                    y: { suggestedMin: 0, suggestedMax: 500 }, 
+                    x: { display: false } 
+                },
+                animation: { duration: 0 } // Hilangkan animasi agar ringan
+            }
+        });
+
+       
+        const brokerUrl = 'wss://bf7d402f109e4707983596e7fce81379.s1.eu.hivemq.cloud:8884/mqtt';
+        
+        //settingan mqtt
+
+        const options = {
+            username: 'ArsiFarm', 
+            password: 'PKMSVUGM2026',
+            clientId: 'Web-UGM-' + Math.random().toString(16).substr(2, 8)
+        };
+
+        const client = mqtt.connect(brokerUrl, options);
+        const statusText = document.getElementById('status-text');
+        const statusDot = document.getElementById('status-dot');
+
+        client.on('connect', () => {
+            console.log('Web berhasil terhubung ke HiveMQ Cloud!');
+            statusText.innerText = 'Online';
+            statusDot.classList.replace('bg-yellow-400', 'bg-green-400');
+            
+            // Subscribe ke semua data dari ESP32
+            client.subscribe('pengabdian/svugm/#');
+        });
+
+        client.on('error', (err) => {
+            console.error('MQTT Error: ', err);
+            statusText.innerText = 'Error Connection';
+            statusDot.classList.replace('bg-green-400', 'bg-red-500');
+        });
+
+        // --- 4. PARSING DATA JSON DARI ESP32 ---
+        client.on('message', (topic, message) => {
+            try {
+                const data = JSON.parse(message.toString());
+                console.log(`Data dari ${topic}:`, data);
+
+                // --- ROUTING DATA PUSAT KENDALI (MAIN HOUSE) ---
+                if (topic === 'pengabdian/svugm/utama') {
+                    
+                    document.getElementById('val-daya-utama').innerHTML = `${data.ac_w} <span class="text-base font-bold text-gray-500">W</span>`;
+                    document.getElementById('val-arus-out').innerHTML = `${data.ac_a} <span class="text-base font-bold text-gray-500">A</span>`;
+                    document.getElementById('val-arus-pv').innerHTML = `${data.panel_a} <span class="text-base font-bold text-gray-500">A</span>`;
+                    
+                    // Kalkulasi Baterai 12V (Asumsi 10.5V Kosong, 13.5V Penuh)
+                    let volt = parseFloat(data.baterai_v);
+                    let perc = Math.round(((volt - 10.5) / (13.5 - 10.5)) * 100);
+                    if(perc > 100) perc = 100;
+                    if(perc < 0) perc = 0;
+                    
+                    document.getElementById('val-batt-perc').innerHTML = `${perc}<span class="text-base font-bold text-gray-500">% (${volt}V)</span>`;
+                    
+                    const battBar = document.getElementById('batt-bar');
+                    battBar.style.width = `${perc}%`;
+                    battBar.className = perc > 30 ? 'bg-green-500 h-2 rounded-full' : 'bg-red-500 h-2 rounded-full';
+
+                    // Update Chart
+                    if (chartLabels.length > 30) { chartLabels.shift(); chartData.shift(); }
+                    chartLabels.push(new Date().toLocaleTimeString());
+                    chartData.push(data.ac_w);
+                    wattChart.update();
+
+                    // Logika Alarm Listrik PLN Padam (Kalau voltase AC drop di bawah 100V)
+                    const alarmBanner = document.getElementById('alarm-pln');
+                    if (data.ac_v < 100) {
+                        alarmBanner.classList.remove('hidden');
+                        alarmBanner.classList.add('block');
+                    } else {
+                        alarmBanner.classList.add('hidden');
+                        alarmBanner.classList.remove('block');
+                    }
+                } 
+                
+                // --- ROUTING DATA GREENHOUSE 1 ---
+                else if (topic === 'pengabdian/svugm/gh1') {
+                    document.getElementById('n1-suhu').innerHTML = `${data.suhu} <span class="text-base font-bold text-gray-500">&deg;C</span>`;
+                    document.getElementById('n1-lembab').innerHTML = `${data.lembab} <span class="text-base font-bold text-gray-500">%</span>`;
+                    document.getElementById('n1-tds').innerHTML = `${data.tds} <span class="text-base font-bold text-gray-500">ppm</span>`;
+                    document.getElementById('n1-ph').innerText = data.ph;
+                }
+                
+                // --- ROUTING DATA GREENHOUSE 2 ---
+                else if (topic === 'pengabdian/svugm/gh2') {
+                    document.getElementById('n2-suhu').innerHTML = `${data.suhu} <span class="text-base font-bold text-gray-500">&deg;C</span>`;
+                    document.getElementById('n2-lembab').innerHTML = `${data.lembab} <span class="text-base font-bold text-gray-500">%</span>`;
+                    document.getElementById('n2-tds').innerHTML = `${data.tds} <span class="text-base font-bold text-gray-500">ppm</span>`;
+                    document.getElementById('n2-ph').innerText = data.ph;
+                }
+                
+                // --- ROUTING DATA GREENHOUSE 3 ---
+                else if (topic === 'pengabdian/svugm/gh3') {
+                    document.getElementById('n3-suhu').innerHTML = `${data.suhu} <span class="text-base font-bold text-gray-500">&deg;C</span>`;
+                    document.getElementById('n3-lembab').innerHTML = `${data.lembab} <span class="text-base font-bold text-gray-500">%</span>`;
+                    document.getElementById('n3-tds').innerHTML = `${data.tds} <span class="text-base font-bold text-gray-500">ppm</span>`;
+                    document.getElementById('n3-ph').innerText = data.ph;
+                }
+
+            } catch (error) {
+                console.error("Gagal mem-parsing JSON dari ESP32:", error);
+            }
+        });
+    </script>
+</body>
+</html>
